@@ -10,7 +10,6 @@ from utils import (
   create_canvas
 )
 
-
 app = FastAPI(title="Paint-by-Numbers API")
 
 # ==================== CORS Setup ====================
