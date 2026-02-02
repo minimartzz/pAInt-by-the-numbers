@@ -54,8 +54,8 @@ Single image uploaded
 
 - [✅] Phase 1: Summarising colours used in an image
 - [✅] Phase 2: Drawing contours for image and colour assignment
-- [] Phase 3: Testing complex architectures
-- [] Phase 4: Web App development
+- [✅] Phase 3: Testing complex architectures
+- [✅] Phase 4: Web App development
 - [] Phase 5: Deployment
 
 ## :handshake: Contact
