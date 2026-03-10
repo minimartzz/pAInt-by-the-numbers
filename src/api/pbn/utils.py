@@ -47,10 +47,10 @@ def load_image(url: str, encoding: str="BGR") -> np.array:
 
     return image
   else:
-    print(f"Failed to retrieve iamge. Status code: {response.status_code}")
+    print(f"Failed to retrieve image. Status code: {response.status_code}")
     return None
 
-def upload_image(img: np.array, filename: str, type: str):
+def upload_image(img: np.array, folder:str, filename: str, type: str):
   token = secrets.token_hex(8)
   name = f"{filename}_{token}_{type}"
 
@@ -65,11 +65,12 @@ def upload_image(img: np.array, filename: str, type: str):
   # Upload to Cloudinary
   response = cloudinary.uploader.upload(
     image_bytes,
+    folder=folder,
     public_id=name,
     overwrite=True,
     resource_type="image"
   )
-  src_url = CloudinaryImage(name).build_url()
+  src_url = response['secure_url']
 
   return response, src_url
 

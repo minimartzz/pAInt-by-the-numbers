@@ -11,9 +11,18 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
 
-const PBNConfiguration = () => {
+interface PBNConfigurationProps {
+  setGenerationVersion: React.Dispatch<React.SetStateAction<string>>;
+}
+
+const PBNConfiguration = ({ setGenerationVersion }: PBNConfigurationProps) => {
   const [activeTab, setActiveTab] = useState("default");
   const numColours = Array.from({ length: 30 }, (_, i) => i + 1);
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    setGenerationVersion(value);
+  };
 
   return (
     <div className="self-start mt-6">
@@ -22,14 +31,14 @@ const PBNConfiguration = () => {
       <Tabs
         defaultValue="default"
         className="gap-4 my-2"
-        onValueChange={setActiveTab}
+        onValueChange={handleTabChange}
       >
         <TabsList className="bg-accent-soft gap-2">
           <TabsTrigger key="default" value="default">
             Default
           </TabsTrigger>
           {/* IMPROVEMENT: OpenAI disabled for now */}
-          <TabsTrigger key="openai" value="openai" disabled={true}>
+          <TabsTrigger key="openai" value="openai">
             OpenAI
           </TabsTrigger>
         </TabsList>

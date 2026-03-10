@@ -102,11 +102,13 @@ async def process_default(request: PBNRequest):
     try:
       res_new_img, new_img_src_url = upload_image(
         img=new_img,
+        folder="pbn-processed",
         filename=request.filename,
         type="NEW"
       )
       res_canvas, canvas_src_url = upload_image(
         img=canvas,
+        folder="canvas",
         filename=request.filename,
         type="PBN"
       )

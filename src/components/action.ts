@@ -1,6 +1,8 @@
 "use server";
 
 import { v2 as cloudinary } from "cloudinary";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 // Configure Cloudinary
 cloudinary.config({
@@ -33,4 +35,39 @@ export async function uploadImageAction(formData: FormData) {
       })
       .end(buffer);
   });
+}
+
+export async function generateDefault(formData: FormData) {
+  const payload = {
+    k_colours: parseInt(formData.get("k_colours") as string),
+    encoding: formData.get("encoding"),
+    filename: formData.get("filename"),
+    image_url: formData.get("imageUrl"),
+    n_segments: parseInt(formData.get("segments") as string),
+    compactness: parseInt(formData.get("compactness") as string),
+    sigma: parseInt(formData.get("sigma") as string),
+    min_area_ratio: parseFloat(formData.get("min_area") as string),
+  };
+
+  // TODO: Change this in Prod
+  const response = await fetch("http://localhost:1000/process-default", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) throw new Error("process-default API request failed");
+
+  const data = await response.json();
+
+  // Store in cookies before redirecting
+  (await cookies()).set("api_response", JSON.stringify(data), {
+    httpOnly: true,
+    maxAge: 60,
+    path: "/",
+  });
+
+  redirect("/results");
 }

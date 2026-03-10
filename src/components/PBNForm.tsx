@@ -1,4 +1,5 @@
 "use client";
+import { generateDefault } from "@/components/action";
 import ImageDropzone from "@/components/ImageDropzone";
 import PBNConfiguration from "@/components/PBNConfiguration";
 import { Button } from "@/components/ui/button";
@@ -9,9 +10,9 @@ import { toast } from "sonner";
 
 const PBNForm = () => {
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
+  const [generationVersion, setGenerationVersion] = useState("default");
 
   const handleSubmit = async (prevState: any, formData: FormData) => {
-    // TODO: OpenAI handling to trigger different API
     try {
       // Append the uploaded image
       if (!uploadedImageUrl) {
@@ -20,14 +21,28 @@ const PBNForm = () => {
       }
       formData.append("imageUrl", uploadedImageUrl);
 
-      if (!("segments" in formData)) {
-        formData.append("segments", "200");
-        formData.append("compactness", "10");
-        formData.append("sigma", "1");
-        formData.append("min_area", "0.0001");
+      switch (generationVersion) {
+        case "default":
+          if (!("segments" in formData)) {
+            formData.append("segments", "200");
+            formData.append("compactness", "10");
+            formData.append("sigma", "1");
+            formData.append("min_area", "0.0001");
+          }
+
+          console.log(formData);
+          await generateDefault(formData);
+          break;
+
+        case "openai":
+          console.log("nothing yet");
+          break;
+
+        default:
+          console.warn("Unkonwn generation version");
+          break;
       }
 
-      console.log(formData);
       return { success: true, message: "Success" };
     } catch (error) {
       return { success: false, message: "Error" };
@@ -42,7 +57,7 @@ const PBNForm = () => {
   return (
     <Form action={formAction} className="w-full">
       {/* Configurations */}
-      <PBNConfiguration />
+      <PBNConfiguration setGenerationVersion={setGenerationVersion} />
 
       {/* Image Dropzone Component */}
       <ImageDropzone setUploadedImageUrl={setUploadedImageUrl} />
@@ -54,7 +69,7 @@ const PBNForm = () => {
         className="w-full flex-centered gap-2 mt-8 bg-orange-400 hover:bg-accent-main hover:cursor-pointer"
       >
         {isPending ? (
-          <div>
+          <div className="flex-centered gap-x-2">
             <Loader2 className="animate-spin" size={18} />
             Generating Canvas...
           </div>
