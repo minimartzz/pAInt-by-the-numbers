@@ -30,7 +30,6 @@ const PBNForm = () => {
             formData.append("min_area", "0.0001");
           }
 
-          console.log(formData);
           await generateDefault(formData);
           break;
 

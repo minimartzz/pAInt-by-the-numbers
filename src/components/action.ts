@@ -62,8 +62,9 @@ export async function generateDefault(formData: FormData) {
 
   const data = await response.json();
 
-  // Store in cookies before redirecting
-  (await cookies()).set("api_response", JSON.stringify(data), {
+  // Store in cookies before redirecting (include original image URL for results page)
+  const cookieData = { ...data, original_image_url: payload.image_url };
+  (await cookies()).set("api_response", JSON.stringify(cookieData), {
     httpOnly: true,
     maxAge: 60,
     path: "/",

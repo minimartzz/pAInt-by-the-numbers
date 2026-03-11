@@ -1,3 +1,4 @@
+import ResultsClient from "@/components/results/ResultsClient";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -7,15 +8,16 @@ const Page = async () => {
 
   if (!raw) redirect("/");
 
-  const data = JSON.parse(raw);
+  const parsed = JSON.parse(raw);
+
+  // Validate we have the minimum required fields
+  if (!parsed.data || !parsed.original_image_url) redirect("/");
 
   return (
-    <div className="p-8">
-      <h1 className="text-2xl font-bold mb-4">Results</h1>
-      <pre className="bg-gray-100 rounded p-4 text-sm">
-        {JSON.stringify(data, null, 2)}
-      </pre>
-    </div>
+    <ResultsClient
+      originalImageUrl={parsed.original_image_url}
+      data={parsed.data}
+    />
   );
 };
 
