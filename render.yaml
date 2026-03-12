@@ -3,9 +3,9 @@
 # Set all `sync: false` env vars once in the Render dashboard (or via Render CLI).
 
 services:
-
   # ── Python FastAPI (Paint-by-Numbers processing) ──────────────────────────
   - type: web
+    plan: free
     name: paint-api
     runtime: docker
     dockerfilePath: ./src/api/Dockerfile
@@ -21,6 +21,7 @@ services:
   # ── Next.js Web App ───────────────────────────────────────────────────────
   - type: web
     name: paint-webapp
+    plan: free
     runtime: docker
     dockerfilePath: ./src/Dockerfile
     dockerContext: ./src
