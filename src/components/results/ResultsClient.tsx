@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { Archive, ArrowLeft, Download, Palette, X, ZoomIn } from "lucide-react";
+import { Archive, ArrowLeft, Check, Copy, Download, Palette, X, ZoomIn } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import JSZip from "jszip";
@@ -184,44 +184,98 @@ function ColourSwatch({
 }) {
   const [r, g, b] = rgb;
   const cssColour = `rgb(${r}, ${g}, ${b})`;
-
-  // Determine readable text colour on the swatch
+  const hex = `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
   const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-  const swatchText = luminance > 160 ? "#222" : "#fff";
+  const onColour = luminance > 155 ? "rgba(0,0,0,0.7)" : "rgba(255,255,255,0.9)";
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(hex);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
 
   return (
     <motion.div
-      className="flex items-center gap-3 bg-card rounded-xl px-3 py-2.5 border border-border hover:shadow-md transition-shadow"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay, duration: 0.3, ease: "easeOut" }}
-      whileHover={{ y: -2 }}
+      className="group relative rounded-2xl overflow-hidden border border-border/50 cursor-pointer select-none"
+      initial={{ opacity: 0, y: 20, scale: 0.93 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ delay, duration: 0.45, ease: [0.23, 1, 0.32, 1] }}
+      whileHover={{
+        y: -6,
+        scale: 1.04,
+        boxShadow: `0 16px 40px rgba(${r},${g},${b},0.52)`,
+        transition: { type: "spring", stiffness: 340, damping: 22 },
+      }}
+      style={{
+        boxShadow: `0 2px 10px rgba(${r},${g},${b},0.18)`,
+      }}
+      onClick={handleCopy}
+      title={`Click to copy ${hex}`}
     >
-      {/* Number */}
-      <span className="text-xs font-bold text-muted-foreground w-5 text-right shrink-0">
-        {index}
-      </span>
-
-      {/* Colour box */}
-      <motion.div
-        className="w-8 h-8 rounded-md shrink-0 border border-border/60 flex-centered text-[10px] font-bold shadow-inner"
-        style={{ backgroundColor: cssColour, color: swatchText }}
-        whileHover={{ scale: 1.15 }}
-        transition={{ type: "spring", stiffness: 400, damping: 20 }}
-        title={cssColour}
+      {/* Large colour block */}
+      <div
+        className="relative h-28 w-full flex items-start justify-between p-2.5"
+        style={{ backgroundColor: cssColour }}
       >
-        {index}
-      </motion.div>
+        {/* Number badge */}
+        <span
+          className="text-[11px] font-bold px-2 py-0.5 rounded-lg backdrop-blur-sm"
+          style={{ backgroundColor: `rgba(0,0,0,0.18)`, color: onColour }}
+        >
+          {index}
+        </span>
 
-      {/* Name */}
-      <span className="text-sm font-medium text-foreground capitalize flex-1 truncate">
-        {name}
-      </span>
+        {/* Hex badge — appears on group hover */}
+        <span
+          className="text-[10px] font-mono px-1.5 py-0.5 rounded-md backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+          style={{ backgroundColor: `rgba(0,0,0,0.18)`, color: onColour }}
+        >
+          {hex}
+        </span>
+      </div>
 
-      {/* RGB */}
-      <span className="text-xs text-muted-foreground font-mono shrink-0 hidden sm:block">
-        {r}, {g}, {b}
-      </span>
+      {/* Info row */}
+      <div className="bg-card px-3 py-2.5 flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground capitalize leading-tight truncate">
+            {name}
+          </p>
+          <p className="text-[11px] text-muted-foreground font-mono mt-0.5">
+            {r}, {g}, {b}
+          </p>
+        </div>
+        <Copy
+          size={13}
+          className="shrink-0 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors"
+        />
+      </div>
+
+      {/* "Copied!" flash overlay */}
+      <AnimatePresence>
+        {copied && (
+          <motion.div
+            className="absolute inset-0 flex-centered backdrop-blur-[2px]"
+            style={{ backgroundColor: `rgba(${r},${g},${b},0.75)` }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+          >
+            <motion.div
+              className="flex items-center gap-1.5 font-semibold text-sm"
+              style={{ color: onColour }}
+              initial={{ scale: 0.65, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.65, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 420, damping: 20 }}
+            >
+              <Check size={15} />
+              Copied!
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
@@ -346,7 +400,7 @@ export default function ResultsClient({
 
         {/* ── Colour Palette ── */}
         <motion.section
-          className="space-y-4"
+          className="space-y-5"
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.35 }}
@@ -374,15 +428,40 @@ export default function ResultsClient({
             </motion.button>
           </div>
 
-          {/* Swatches grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {/* Colour strip */}
+          <motion.div
+            className="h-7 rounded-xl overflow-hidden flex shadow-sm"
+            initial={{ opacity: 0, scaleX: 0.8 }}
+            animate={{ opacity: 1, scaleX: 1 }}
+            transition={{ delay: 0.4, duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
+            title="All palette colours"
+            aria-hidden
+          >
+            {paletteKeys.map((key) => {
+              const [r, g, b] = rgb_values[key];
+              return (
+                <div
+                  key={key}
+                  className="flex-1 h-full transition-transform hover:scale-y-110 origin-bottom"
+                  style={{ backgroundColor: `rgb(${r},${g},${b})` }}
+                  title={colour_names[key]}
+                />
+              );
+            })}
+          </motion.div>
+
+          {/* Swatches grid — click any card to copy its hex */}
+          <p className="text-xs text-muted-foreground -mt-1">
+            Click a swatch to copy its hex value
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {paletteKeys.map((key, i) => (
               <ColourSwatch
                 key={key}
                 index={key}
                 name={colour_names[key]}
                 rgb={rgb_values[key]}
-                delay={0.35 + i * 0.04}
+                delay={0.42 + i * 0.03}
               />
             ))}
           </div>

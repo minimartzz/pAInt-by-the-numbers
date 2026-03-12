@@ -17,7 +17,7 @@ interface PBNConfigurationProps {
 
 const PBNConfiguration = ({ setGenerationVersion }: PBNConfigurationProps) => {
   const [activeTab, setActiveTab] = useState("default");
-  const numColours = Array.from({ length: 30 }, (_, i) => i + 1);
+  const numColours = Array.from({ length: 50 }, (_, i) => i + 1);
 
   const handleTabChange = (value: string) => {
     setActiveTab(value);
