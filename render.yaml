@@ -1,0 +1,37 @@
+# render.yaml — Infrastructure as Code for Render
+# Both services auto-deploy when their relevant paths change on the main branch.
+# Set all `sync: false` env vars once in the Render dashboard (or via Render CLI).
+
+services:
+
+  # ── Python FastAPI (Paint-by-Numbers processing) ──────────────────────────
+  - type: web
+    name: paint-api
+    runtime: docker
+    dockerfilePath: ./src/api/Dockerfile
+    dockerContext: ./src/api
+    envVars:
+      - key: CLOUDINARY_CLOUD
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_SECRET_KEY
+        sync: false
+
+  # ── Next.js Web App ───────────────────────────────────────────────────────
+  - type: web
+    name: paint-webapp
+    runtime: docker
+    dockerfilePath: ./src/Dockerfile
+    dockerContext: ./src
+    envVars:
+      # Set this to the full URL of the paint-api service above,
+      # e.g. https://paint-api.onrender.com
+      - key: API_URL
+        sync: false
+      - key: CLOUDINARY_CLOUD
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_SECRET_KEY
+        sync: false

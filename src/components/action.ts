@@ -49,8 +49,8 @@ export async function generateDefault(formData: FormData) {
     min_area_ratio: parseFloat(formData.get("min_area") as string),
   };
 
-  // TODO: Change this in Prod
-  const response = await fetch("http://localhost:1000/process-default", {
+  const apiUrl = process.env.API_URL ?? "http://localhost:1000";
+  const response = await fetch(`${apiUrl}/process-default`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
