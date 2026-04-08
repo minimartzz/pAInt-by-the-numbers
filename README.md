@@ -56,7 +56,8 @@ Single image uploaded
 - [✅] Phase 2: Drawing contours for image and colour assignment
 - [✅] Phase 3: Testing complex architectures
 - [✅] Phase 4: Web App development
-- [] Phase 5: Deployment
+- [✅] Phase 5: Deployment
+- [] Phase 6: GenAI integration
 
 ## :handshake: Contact
 
@@ -71,3 +72,7 @@ Project Link: [Github](https://github.com/minimartzz/pAInt-by-the-numbers)
 - Cover Image: [Zieler](https://www.zieler.co.uk/wp-content/uploads/2021/11/pbn-hand-tiger.jpg)
 - Technology Badges: [Ileriayo](https://github.com/Ileriayo/markdown-badges?tab=readme-ov-file#table-of-contents), [Alexandresanlim](https://github.com/alexandresanlim/Badges4-README.md-Profile)
 - Coverage Badges: [dwyl](https://github.com/dwyl/repo-badges)
+
+## Additional References
+
+- [Improving FLUX.1 performance](https://modal.com/blog/flux-3x-faster)
