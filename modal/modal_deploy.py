@@ -192,3 +192,149 @@ class FluxModel:
 
   def _compile_warmup(self):
     """Runs a dummy inference to trigger torch.compile"""
+    # Monkey-patch to handle a known para-attn + dynamic shapes bug:
+    # torch inductor's remove_noop_ops pass crashes on SymFloat objects.
+    from torch._inductor.dc_passes import post_grad
+    if not hasattr(post_grad, "_orig_same_meta"):
+      post_grad._orig_same_meta = post_grad.same_meta # Save the original implementation
+
+      def _safe_same_meta(n1, n2):
+        try:
+          return post_grad._orig_same_meta(n1, n2)
+        except AttributeError as e:
+          if "SymFloat" in str(e) and "size" in str(e):
+            return False
+          raise
+      
+      post_grad.same_meta = _safe_same_meta # Monkey-patch: Update function at runtime
+    
+    print("[COMPILE] Trigger torch compile (warmup pass 1/2)...")
+    self.pipe(
+      "warmup",
+      height=1024,
+      width=1024,
+      num_images_per_prompt=1,
+      num_inference_steps=1
+    )
+
+    print("[COMPILE] Trigger torch compile (warmup pass 2/2 - dynamic batch)...")
+    self.pipe(
+      "warmup",
+      height=1024,
+      width=1024,
+      num_images_per_prompt=2,
+      num_inference_steps=1
+    )
+  
+  def _load_mega_cache(self):
+    """Restores serialised torch compiler artifacts from cache"""
+    try:
+      if self.mega_cache_path.exists():
+        print("[LOAD] Loading torch mega-cache...")
+        with open(self.mega_cache_path, "rb") as f:
+          data = f.read()
+        if data:
+          import torch
+          torch.compiler.load_cache_artifacts(data)
+        else:
+          print("[LOAD] Mega-cache file empty, will regenerate")
+    except Exception as e:
+      print(f"[LOAD] Could not load mega-cache (will regenerate): {e}")
+  
+  def _save_mega_cache(self):
+    """Serialise compiled torch artifacts to the cache volume for next boot"""
+    try:
+      import torch
+      print("[SAVE] Saving torch mega-cache...")
+      artifacts, _ = torch.compiler.save_cache_artifacts()
+      with open(self.mega_cache_path, "wb") as f:
+        f.write(artifacts)
+      cache_volume.commit()
+      print("[SAVE] Mega-cache saved")
+    except Exception as e:
+      print(f"Could not save mega-cache: {e}")
+
+  # ---- Web Endpoint ------------------------------
+  @modal.fastapi_endpoint(method="POST", label="flux-transform")
+  def transform(self, request: dict) -> dict:
+    """
+    POST /transform
+
+    Supports two modes:
+      - text2img: No image provided -> generates from prompt alone 
+      - img2img: Image provided -> style-transfer based on prompt and uploaded image
+    """
+    import torch
+    from PIL import Image
+    from diffusers import FluxImg2ImgPipeline
+
+    prompt    = request.get("prompt", "")
+    image_b64 = request.get("image_b64")
+    steps     = min(max(int(request.get("steps", 4)), 1), 8)
+    guidance  = float(request.get("guidance", 0.0))
+    width     = int(request.get("width", 1024))
+    height    = int(request.get("height", 1024))
+    strength  = float(request.get("strength", 0.75))
+
+    if not prompt:
+      return {"error": "A prompt is required"}, 400
+    
+    torch.cuda.synchronize()
+    start = time.perf_counter()
+    mode = "text2img"
+
+    if image_b64:
+      mode = "img2img"
+      img_bytes = base64.b64decode(image_b64)
+      source_image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+      source_image = source_image.resize((width, height))
+
+      # Load compiled model from self.pipe
+      img2img_pipe = FluxImg2ImgPipeline(
+        **{k: getattr(self.pipe, k) for k in [
+          "scheduler", "vae", "text_encoder", "tokenizer",
+          "text_encoder_2", "tokenizer_2", "transformer"
+        ]}
+      )
+      img2img_pipe.to("cuda")
+
+      result = img2img_pipe(
+        prompt=prompt,
+        image=source_image,
+        strength=strength,
+        num_inference_steps=steps,
+        guidance_scale=guidance,
+        generator=torch.Generator("cuda").manual_seed(0)
+      )
+    else:
+      result = self.pipe(
+        prompt=prompt,
+        num_inference_steps=steps,
+        guidance_scale=guidance,
+        width=width,
+        height=height,
+        generator=torch.Generator("cuda").manual_seed(0),
+        max_sequence_length=256,
+      )
+    
+    torch.cuda.synchronize()
+    duration = round(time.perf_counter() - start, 2)
+
+    buf = io.BytesIO()
+    result.images[0].save(buf, format="PNG")
+    output_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    return {
+      "image_b64": output_b64,
+      "metadata": {
+        "model": "FLUX.1-schnell",
+        "prompt": prompt,
+        "steps": steps,
+        "guidance": guidance,
+        "width": width,
+        "height": height,
+        "strength": strength if image_b64 else None,
+        "mode": mode,
+        "duration_seconds": duration
+      }
+    }
