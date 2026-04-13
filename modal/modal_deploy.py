@@ -24,7 +24,7 @@ from pathlib import Path
 # ========================================
 # IMAGE + VOLUME DEFINITION
 # ========================================
-CACHE_DIR = Path("/cache")
+CACHE_DIR = "/cache"
 cuda_version = "12.6.3"
 image = (
   modal.Image.from_registry(
@@ -33,25 +33,28 @@ image = (
   )
   .entrypoint([])
   .pip_install(
-    "torch==2.7.0",
+    "torch",
     "torchvision",
-    "diffusers>=0.33.0",
-    "transformers>=4.51.0",
-    "accelerate>=1.6.0",
+    "diffusers>=0.32.0",
+    "transformers>=4.47.0,<4.52.0",
+    "tokenizers>=0.21.0",
+    "accelerate",
     "sentencepiece",
-    "pillow>=10.0.0",
-    "huggingface_hub>=0.30.0",
+    "protobuf",
+    "pillow",
+    "huggingface_hub",
     "hf-xet",
-    "para-attn=0.3.32"
+    "para-attn",
+    "fastapi[standard]"
   )
   .env({
     "HF_XET_HIGH_PERFORMANCE": "1",      # Enables HF's fast transfer
     "TORCHINDUCTOR_FX_GRAPH_CACHE": "1", # Persist torch inductor FC graph cache across restsarts
     # Persistent caches stored in CACHE_DIR
-    "TORCHINDUCTOR_CACHE_DIR": str(CACHE_DIR / ".inductor_cache"),
-    "TRITON_CACHE_DIR":        str(CACHE_DIR / ".inductor_cache"),
-    "CUDA_CACHE_PATH":         str(CACHE_DIR / ".inductor_cache"),
-    "HF_HUB_CACHE":            str(CACHE_DIR / ".inductor_cache")
+    "TORCHINDUCTOR_CACHE_DIR": f"{CACHE_DIR}/.inductor_cache",
+    "TRITON_CACHE_DIR":        f"{CACHE_DIR}/.triton_cache",
+    "CUDA_CACHE_PATH":         f"{CACHE_DIR}/.cuda_cache",
+    "HF_HUB_CACHE":            f"{CACHE_DIR}/.hf_cache"
   })
 )
 
@@ -81,7 +84,6 @@ def download_weights():
     repo_id=MODEL_ID,
     local_dir=MODEL_DIR,
     token=os.environ.get("HF_TOKEN"),
-    ignore_patterns=["*.md", "*.txt"]
   )
   model_volume.commit()
   print("[WEIGHTS] Download complete.")
@@ -116,7 +118,7 @@ class FluxModel:
     ).to("cpu")
 
     # Prepare mega-cache path
-    mega_cache_dir = CACHE_DIR / ".mega_cache"
+    mega_cache_dir = f"{CACHE_DIR}/.mega_cache"
     mega_cache_dir.mkdir(parents=True, exist_ok=True)
     self.mega_cache_path = mega_cache_dir / "flux_schnell_mega"
 
@@ -126,9 +128,18 @@ class FluxModel:
   @modal.enter(snap=False)
   def setup(self):
     import torch
+    from diffusers import FluxImg2ImgPipeline
 
     print("[FLUX - GPU] Moving pipeline to GPU...")
     self.pipe.to("cuda")
+
+    self.img2img_pipe = FluxImg2ImgPipeline(
+    **{k: getattr(self.pipe, k) for k in [
+      "scheduler", "vae", "text_encoder", "tokenizer",
+      "text_encoder_2", "tokenizer_2", "transformer",
+    ]}
+    )
+    self.img2img_pipe.to("cuda")
 
     # Load compiled torch graph from mega_cache
     self._load_mega_cache()
