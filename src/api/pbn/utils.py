@@ -2,7 +2,10 @@
 Function calls for image processing
 """
 import os
+import io
 import cv2
+import base64
+import httpx
 import numpy as np
 import colornames
 import requests
@@ -11,12 +14,23 @@ import cloudinary
 import cloudinary.uploader
 
 from dotenv import load_dotenv
+from fastapi import HTTPException, status
+from fastapi.responses import Response
 from cloudinary import CloudinaryImage
 from sklearn.cluster import KMeans
 from skimage.segmentation import slic
 from skimage.color import label2rgb
+from PIL import Image
 
 load_dotenv()
+
+# ==================== Modal Setup ====================
+REQUEST_TIMEOUT: float = 180.0
+MODAL_ENDPOINT: str = os.environ.get("MODAL_ENDPOINT_URL", "")
+if not MODAL_ENDPOINT:
+  import warnings
+  warnings.warn("MODAL_ENDPOINT_URL not set in env")
+
 
 # ==================== Cloudinary Functions ====================
 cloudinary.config(
@@ -279,3 +293,76 @@ def create_canvas(
           )
 
   return canvas
+
+
+# ==================== Modal Functions ====================
+def _convert_img(size: tuple[int, int], multiple: int = 64) -> tuple[int, int]:
+  w, h = size
+  return (w // multiple) * multiple, (h // multiple) * multiple
+
+
+def _encode_pil_to_b64(img: Image.Image) -> tuple[str, tuple[int, int]]:
+  img = img.convert("RGB")
+  snapped = _convert_img(img.size)
+  if snapped != img.size:
+    img = img.resize(snapped, Image.LANCZOS)
+
+  w, h = img.size
+  buf = io.BytesIO()
+  img.save(buf, format="PNG")
+  return base64.b64encode(buf.getvalue()).decode('utf-8'), (w, h)
+
+
+def read_and_validate_ndarray(arr: np.ndarray) -> tuple[str, tuple[int, int]]:
+  if not isinstance(arr, np.ndarray):
+    raise HTTPException(status_code=400, detail="Input must be a numpy.ndarray")
+
+  if arr.ndim not in (2, 3):
+    raise HTTPException(status_code=400, detail=f"Array must be 2D or 3D. Got shape {arr.shape}")
+  
+  if np.issubdtype(arr.dtype, np.floating):
+    if arr.min() < 0.0 or arr.max() > 1.0:
+      raise HTTPException(status_code=400, detail="Float array values must be between [0, 1]")
+    
+    arr = (arr * 255).clip(0, 255).astype(np.uint8)
+  elif arr.dtype != np.uint8:
+    raise HTTPException(status_code=400, detail=f"Unsupported dtype '{arr.dtype}'. Use uint8 or float [0, 1]")
+  
+  img = Image.fromarray(arr)
+  return _encode_pil_to_b64(img)
+
+
+async def call_modal(payload: dict) -> dict:
+  async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+    try:
+      resp = await client.post(MODAL_ENDPOINT)
+      resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+      raise HTTPException(
+        status_code=status.HTTP.HTTP_502_BAD_GATEWAY,
+        details=f"Modal endpoint error {exc.response.status_code}: {exc.response.text[:300]}"
+      )
+    except httpx.TimeoutException:
+      raise HTTPException(
+        status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+        detail=f"Modal endpoint timed out after {REQUEST_TIMEOUT}s (cold start + inference).",
+      )
+    except httpx.RequestError as exc:
+      raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=f"Could not reach Modal endpoint: {exc}",
+      )
+
+  return resp.json()
+
+def build_response(result: dict) -> Response:
+  img_bytes = base64.b64decode(result["image_b64"])
+  return Response(
+    content=img_bytes,
+    media_type="image/png",
+    headers={
+      "X-Model": result['metadata'].get("model", ""),
+      "X-Duration": str(result['metadata'].get("duration_seconds", "")),
+      "X-Mode": result["metadata"].get("mode", "")
+    }
+  )

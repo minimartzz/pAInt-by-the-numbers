@@ -1,13 +1,20 @@
+import os
+import io
+import numpy as np
+from PIL import Image
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, HttpUrl, Field
+from pydantic import BaseModel, HttpUrl, Field, field_validator
 from utils import (
   load_image,
   upload_image,
   superpixel_segmentation,
   get_colours,
-  create_canvas
+  create_canvas,
+  read_and_validate_ndarray,
+  call_modal,
+  build_response
 )
 
 app = FastAPI(title="Paint-by-Numbers API")
@@ -19,6 +26,17 @@ app.add_middleware(
   allow_methods=["*"],
   allow_headers=["*"]
 )
+
+# ==================== Modal Setup ====================
+MAX_IMAGE_BYTE: int = 10 * 1024 * 1024 # 10MB upload limit
+ALLOWED_TYPES: set[str] = {"image/png", "image/jpeg", "image/webp"}
+MODAL_ENDPOINT: str = os.environ.get("MODAL_ENDPOINT_URL", "")
+if not MODAL_ENDPOINT:
+  import warnings
+  warnings.warn("MODAL_ENDPOINT_URL not set in env")
+PROMPT = """
+
+"""
 
 # ==================== Request Schema ====================
 class PBNRequest(BaseModel):
@@ -34,6 +52,28 @@ class PBNRequest(BaseModel):
   # Canvas creation
   min_area_ratio: float = Field(default=0.0005)
 
+class PBNModal(BaseModel):
+  image_url: HttpUrl
+  filename: str
+  encoding: str = Field(default="BGR")
+  min_area_ratio: float = Field(default=0.0005)
+  k_colours: int = Field(default=10, ge=4, le=50) # Minimum 4, Max 50
+  prompt: str = Field(PROMPT, min_length=1, max_length=2000, description="Style description")
+  steps: int = Field(4, ge=1, le=8, description="Diffusion steps (1-8)")
+  guidance: float = Field(0.0, ge=0.0, le=10.0, description="Guifance scale (0 = schnell default)")
+  width: int = Field(1024, ge=256, le=1536, multiple_of=64)
+  height: int = Field(1024, ge=256, le=1536, multiple_of=64)
+
+  @field_validator("width", "height")
+  @classmethod
+  def must_be_divisible_by_64(cls, v: int) -> int:
+    if v % 64 != 0:
+      raise ValueError("Width and Height must be divisible by 64")
+    return v
+
+class ModalResponse(BaseModel):
+  image_b64: str
+  metadata: dict
 
 # ==================== Default Response Formats ====================
 def failed_response(message: str, status_code: int = 500):
@@ -134,6 +174,105 @@ async def process_default(request: PBNRequest):
       message=f"An unexpected system error occurred: {str(e)}",
       status_code=500
     )
+
+@app.get("/modal-health", tags=["Utility"])
+async def health():
+  return {
+    "status": "ok",
+    "modal_endpoint_configured": bool(MODAL_ENDPOINT)
+  }
+
+@app.post(
+  "/modal-process",
+  tags=["Image-to-Image"],
+  summary="Style-transfer an uploaded image using text prompt",
+  response_description="Link to Cloudinary image store"
+)
+async def modal_process(
+  request: PBNModal
+):
+  # Load the image
+  image = load_image(request.image_url, request.encoding)
+  if image is None:
+    return failed_response(
+      message="Failed to load image from URL",
+      status_code=404
+    )
+  
+  # Validate image shape
+  image_b64, (orig_w, orig_h) = read_and_validate_ndarray(image)
+
+  payload = {
+    "prompt":   request.prompt,
+    "image_64": image_b64,
+    "steps": request.steps,
+    "guidance": request.guidance,
+    "strength": request.strength,
+    "width": orig_w,
+    "height": orig_h
+  }
+  flux_result = await call_modal(payload)
+  flux_result = build_response(flux_result)
+  img = Image.open(io.BytesIO(flux_result['content'])).convert("RGB")
+  arr = np.array(img)
+
+  # K-Means colours
+  try:
+    new_img, colour_names, rgb_values, labels = get_colours(
+      img=arr,
+      n_clusters=request.k_colours
+    )
+  except Exception as e:
+    return failed_response(
+      message=f"Failed to extract colours: {str(e)}",
+      status_code=500
+    )
+
+  # Create the PBN canvas
+  try:
+    canvas = create_canvas(
+      img=arr,
+      labels=labels,
+      n_clusters=request.k_colours,
+      min_area_ratio=request.min_area_ratio
+    )
+  except Exception as e:
+    return failed_response(
+      message=f"Failed to create PBN canvas: {str(e)}",
+      status_code=500
+    )
+
+  # Upload both processed image and PBN canvas back to store
+  try:
+    res_new_img, new_img_src_url = upload_image(
+      img=new_img,
+      folder="pbn-processed",
+      filename=request.filename,
+      type="NEW"
+    )
+    res_canvas, canvas_src_url = upload_image(
+      img=canvas,
+      folder="canvas",
+      filename=request.filename,
+      type="PBN"
+    )
+  except Exception as e:
+    return failed_response(
+      message=f"Failed to upload images: {str(e)}",
+      status_code=500
+    )
+  
+  # Successful response
+  return {
+    "status": "success",
+    "message": "Successfully processed image! 🥳",
+    "data": {
+      "new_img_url": new_img_src_url,
+      "pbn_url": canvas_src_url,
+      "colour_names": colour_names,
+      "rgb_values": rgb_values
+    }
+  }
 
 if __name__ == "__main__":
   import uvicorn
